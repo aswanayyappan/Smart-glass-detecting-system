@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Blind System</title>
+
+    <!-- Firebase App (the core Firebase SDK) -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <!-- Firebase Realtime Database -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --bg:        #07080d;
+            --surface:   #0d1117;
+            --border:    #1c2333;
+            --text:      #e2e8f0;
+            --muted:     #4a5568;
+            --accent:    #f0a500;
+            --accent-lo: rgba(240,165,0,0.08);
+            --accent-md: rgba(240,165,0,0.18);
+            --green:     #22c55e;
+            --green-lo:  rgba(34,197,94,0.08);
+            --orange:    #fb923c;
+            --orange-lo: rgba(251,146,60,0.08);
+            --red:       #f43f5e;
+            --red-lo:    rgba(244,63,94,0.08);
+            --amber:     #fbbf24;
+            --amber-lo:  rgba(251,191,36,0.08);
+        }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Chakra Petch', sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 24px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* ── Background grid ── */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(var(--border) 1px, transparent 1px),
+                linear-gradient(90deg, var(--border) 1px, transparent 1px);
+            background-size: 40px 40px;
+            opacity: 0.35;
+            pointer-events: none;
+        }
+
+        /* ── Ambient glow ── */
+        body::after {
+            content: '';
+            position: fixed;
+            width: 500px; height: 500px;
+            background: radial-gradient(ellipse, rgba(240,165,0,0.06) 0%, transparent 70%);
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            border-radius: 50%;
+        }
+
+        /* ── Main panel ── */
+        .panel {
+            position: relative;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            width: 100%;
+            max-width: 420px;
+            padding: 36px 32px 32px;
+            z-index: 1;
+            animation: fadeUp 0.6s cubic-bezier(.16,1,.3,1) both;
+        }
+
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        /* corner brackets */
+        .panel::before,
+        .panel::after {
+            content: '';
+            position: absolute;
+            width: 16px; height: 16px;
+            border-color: var(--accent);
+            border-style: solid;
+        }
+        .panel::before {
+            top: -1px; left: -1px;
+            border-width: 2px 0 0 2px;
+        }
+        .panel::after {
+            bottom: -1px; right: -1px;
+            border-width: 0 2px 2px 0;
+        }
+
+        /* inner corner brackets */
+        .corner-br, .corner-tl-inner {
+            position: absolute;
+            width: 16px; height: 16px;
+            border-color: var(--accent);
+            border-style: solid;
+        }
+        .corner-br {
+            top: -1px; right: -1px;
+            border-width: 2px 2px 0 0;
+        }
+        .corner-tl-inner {
+            bottom: -1px; left: -1px;
+            border-width: 0 0 2px 2px;
+        }
+
+        /* ── Header ── */
+        .header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            margin-bottom: 28px;
+        }
+
+        .sys-label {
+            font-size: 9px;
+            letter-spacing: 4px;
+            text-transform: uppercase;
+            color: var(--muted);
+            margin-bottom: 4px;
+        }
+
+        h1 {
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            color: var(--text);
+            line-height: 1;
+        }
+
+        /* ── Connection badge ── */
+        .conn-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 10px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            font-weight: 600;
+            padding: 5px 10px;
+            border-radius: 2px;
+            transition: all 0.4s ease;
+            white-space: nowrap;
+        }
+        .conn-badge .dot {
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            transition: background 0.4s;
+        }
+        .conn-badge.connected {
+            background: var(--green-lo);
+            color: var(--green);
+            border: 1px solid rgba(34,197,94,0.2);
+        }
+        .conn-badge.connected .dot {
+            background: var(--green);
+            box-shadow: 0 0 6px var(--green);
+            animation: blink 2s ease infinite;
+        }
+        .conn-badge.disconnected {
+            background: rgba(244,63,94,0.06);
+            color: var(--red);
+            border: 1px solid rgba(244,63,94,0.15);
+        }
+        .conn-badge.disconnected .dot { background: var(--red); }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50%       { opacity: 0.4; }
+        }
+
+        /* ── Divider ── */
+        .divider {
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--border) 30%, var(--border) 70%, transparent);
+            margin: 0 -32px 28px;
+        }
+
+        /* ── Distance block ── */
+        .data-block { margin-bottom: 24px; }
+
+        .data-label {
+            font-size: 9px;
+            letter-spacing: 4px;
+            text-transform: uppercase;
+            color: var(--muted);
+            margin-bottom: 8px;
+        }
+
+        .distance-wrap {
+            background: var(--accent-lo);
+            border: 1px solid rgba(240,165,0,0.12);
+            border-radius: 3px;
+            padding: 20px 22px;
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+        }
+
+        #distanceDisplay {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 54px;
+            line-height: 1;
+            color: var(--accent);
+            letter-spacing: -1px;
+            transition: color 0.4s;
+            text-shadow: 0 0 30px rgba(240,165,0,0.35);
+        }
+
+        .distance-unit {
+            font-size: 13px;
+            color: var(--muted);
+            letter-spacing: 2px;
+            font-weight: 400;
+            padding-bottom: 6px;
+            align-self: flex-end;
+        }
+
+        /* ── State block ── */
+        .state-wrap {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 16px 22px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            transition: background 0.4s, border-color 0.4s;
+        }
+
+        .state-indicator {
+            width: 10px; height: 10px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            transition: all 0.4s;
+        }
+
+        #stateDisplay {
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            transition: color 0.4s;
+        }
+
+        /* State colour tokens */
+        .state-clear     { color: var(--green); }
+        .state-mid       { color: var(--amber); }
+        .state-detected  { color: var(--orange); }
+        .state-near      { color: var(--red); animation: danger-pulse 0.7s ease infinite alternate; }
+
+        @keyframes danger-pulse {
+            from { text-shadow: 0 0 0px transparent; }
+            to   { text-shadow: 0 0 18px var(--red); }
+        }
+
+        /* State wrap skin variants */
+        .skin-clear     { background: var(--green-lo);  border-color: rgba(34,197,94,0.15); }
+        .skin-mid       { background: var(--amber-lo);  border-color: rgba(251,191,36,0.15); }
+        .skin-detected  { background: var(--orange-lo); border-color: rgba(251,146,60,0.15); }
+        .skin-near      { background: var(--red-lo);    border-color: rgba(244,63,94,0.22); }
+
+        .dot-clear     { background: var(--green);  box-shadow: 0 0 8px var(--green); }
+        .dot-mid       { background: var(--amber);  box-shadow: 0 0 8px var(--amber); }
+        .dot-detected  { background: var(--orange); box-shadow: 0 0 8px var(--orange); }
+        .dot-near      { background: var(--red);    box-shadow: 0 0 8px var(--red); animation: dot-blink 0.6s ease infinite alternate; }
+
+        @keyframes dot-blink {
+            from { opacity: 1; }
+            to   { opacity: 0.2; }
+        }
+
+        /* ── Footer rule ── */
+        .footer-rule {
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--border) 30%, var(--border) 70%, transparent);
+            margin: 28px -32px 24px;
+        }
+
+        /* ── Sound button ── */
+        #enableAudioBtn {
+            font-family: 'Chakra Petch', sans-serif;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            color: var(--accent);
+            background: var(--accent-lo);
+            border: 1px solid rgba(240,165,0,0.25);
+            border-radius: 3px;
+            padding: 13px 28px;
+            width: 100%;
+            cursor: pointer;
+            transition: background 0.3s, border-color 0.3s, color 0.3s, box-shadow 0.3s;
+        }
+        #enableAudioBtn:hover:not(:disabled) {
+            background: var(--accent-md);
+            border-color: rgba(240,165,0,0.5);
+            box-shadow: 0 0 20px rgba(240,165,0,0.1);
+        }
+        #enableAudioBtn:disabled {
+            font-size: 11px;
+            letter-spacing: 3px;
+            color: var(--green);
+            background: var(--green-lo);
+            border-color: rgba(34,197,94,0.25);
+            cursor: not-allowed;
+        }
+
+        /* ── Footer meta ── */
+        .meta-row {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 18px;
+        }
+        .meta-item {
+            font-size: 9px;
+            letter-spacing: 2px;
+            color: var(--muted);
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="panel">
+        <div class="corner-br"></div>
+        <div class="corner-tl-inner"></div>
+
+        <div class="header">
+            <div>
+                <div class="sys-label">System Monitor</div>
+                <h1>Smart Blind</h1>
+            </div>
+            <div id="connectionStatus" class="conn-badge disconnected">
+                <span class="dot"></span>
+                <span class="conn-text">Offline</span>
+            </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- Distance -->
+        <div class="data-block">
+            <div class="data-label">Live Distance</div>
+            <div class="distance-wrap">
+                <div id="distanceDisplay">--</div>
+                <div class="distance-unit" id="distUnit">cm</div>
+            </div>
+        </div>
+
+        <!-- State -->
+        <div class="data-block">
+            <div class="data-label">Obstacle State</div>
+            <div class="state-wrap skin-clear" id="stateWrap">
+                <span class="state-indicator dot-clear" id="stateIndicator"></span>
+                <span id="stateDisplay" class="state-clear">CLEAR</span>
+            </div>
+        </div>
+
+        <div class="footer-rule"></div>
+
+        <button id="enableAudioBtn">⏵ &nbsp;Enable Sound</button>
+
+        <div class="meta-row">
+            <span class="meta-item">Firebase RTDB</span>
+            <span class="meta-item">WebSocket :3000</span>
+        </div>
+    </div>
+
+    <script>
+        const connectionStatus = document.getElementById('connectionStatus');
+        const connText         = connectionStatus.querySelector('.conn-text');
+        const enableAudioBtn   = document.getElementById('enableAudioBtn');
+        const distanceDisplay  = document.getElementById('distanceDisplay');
+        const distUnit         = document.getElementById('distUnit');
+        const stateDisplay     = document.getElementById('stateDisplay');
+        const stateWrap        = document.getElementById('stateWrap');
+        const stateIndicator   = document.getElementById('stateIndicator');
+
+        // ==========================================
+        // FIREBASE SETUP (Live Distance Display)
+        // ==========================================
+        const firebaseConfig = {
+            databaseURL: "https://smart-blindsystem-default-rtdb.firebaseio.com/"
+        };
+        firebase.initializeApp(firebaseConfig);
+
+        const db        = firebase.database();
+        const sensorRef = db.ref('/sensor/current');
+
+        sensorRef.on('value', (snapshot) => {
+            const data = snapshot.val();
+            if (!data) {
+                distanceDisplay.textContent = '--';
+                distUnit.style.display = 'none';
+                if (typeof stopAllAudio === 'function') stopAllAudio();
+                return;
+            }
+
+            let distance = parseFloat(data.distance);
+
+            if (isNaN(distance) || distance <= 0) {
+                distanceDisplay.textContent = '--';
+                distUnit.style.display = 'none';
+                if (typeof stopAllAudio === 'function') stopAllAudio();
+            } else if (distance > 70) {
+                distanceDisplay.textContent = '—';
+                distUnit.style.display = 'none';
+                if (typeof stopAllAudio === 'function') stopAllAudio();
+            } else {
+                distanceDisplay.textContent = distance;
+                distUnit.style.display = '';
+            }
+        });
+
+        // ==========================================
+        // WEBSOCKET SETUP (Audio Trigger & State)
+        // ==========================================
+        let audioEnabled = false;
+
+        const audios = {
+            mid:      new Audio('mid_way.mp3'),
+            detected: new Audio('detected.mp3'),
+            near:     new Audio('too_close.mp3')
+        };
+
+        Object.values(audios).forEach(audio => {
+            audio.preload = 'auto';
+            audio.loop    = true;
+        });
+
+        let currentPlaying    = null;
+        let lastReceivedState = 'clear';
+
+        enableAudioBtn.addEventListener('click', () => {
+            Promise.all(Object.values(audios).map(a => {
+                a.volume = 0;
+                return a.play().then(() => {
+                    a.pause();
+                    a.currentTime = 0;
+                    a.volume = 1;
+                }).catch(() => {});
+            }));
+
+            audioEnabled = true;
+            enableAudioBtn.innerHTML = '✓ &nbsp;Sound Enabled';
+            enableAudioBtn.disabled  = true;
+        });
+
+        function stopAllAudio() {
+            if (currentPlaying) {
+                currentPlaying.pause();
+                currentPlaying.currentTime = 0;
+                currentPlaying = null;
+            }
+            lastReceivedState = 'clear';
+            updateStateUI('clear');
+        }
+
+        function playSoundForState(state) {
+            if (!audioEnabled) return;
+
+            if (state === 'clear') {
+                stopAllAudio();
+                return;
+            }
+
+            if (lastReceivedState === state && currentPlaying) return;
+
+            if (currentPlaying) {
+                currentPlaying.pause();
+                currentPlaying.currentTime = 0;
+                currentPlaying = null;
+            }
+
+            const targetAudio = audios[state];
+            if (!targetAudio) return;
+
+            currentPlaying = targetAudio;
+            targetAudio.currentTime = 0;
+            targetAudio.play().catch(e => console.error("Playback prevented:", e));
+            lastReceivedState = state;
+        }
+
+        /* Skin maps */
+        const SKIN_WRAP = {
+            clear:    'skin-clear',
+            mid:      'skin-mid',
+            detected: 'skin-detected',
+            near:     'skin-near'
+        };
+        const SKIN_DOT = {
+            clear:    'dot-clear',
+            mid:      'dot-mid',
+            detected: 'dot-detected',
+            near:     'dot-near'
+        };
+        const STATE_CLASS = {
+            clear:    'state-clear',
+            mid:      'state-mid',
+            detected: 'state-detected',
+            near:     'state-near'
+        };
+
+        function updateStateUI(state) {
+            stateDisplay.textContent = state.toUpperCase();
+
+            stateDisplay.className  = STATE_CLASS[state]   || 'state-clear';
+            stateWrap.className     = 'state-wrap ' + (SKIN_WRAP[state] || 'skin-clear');
+            stateIndicator.className = 'state-indicator ' + (SKIN_DOT[state] || 'dot-clear');
+        }
+
+        function connectWebSocket() {
+            const wsUrl = `ws://${window.location.hostname}:3000`;
+            const ws    = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                connectionStatus.className = 'conn-badge connected';
+                connText.textContent       = 'Online';
+            };
+
+            ws.onmessage = (event) => {
+                const data     = JSON.parse(event.data);
+                if (data.event === 'obstacle') {
+                    const newState = data.state;
+                    updateStateUI(newState);
+                    if (newState !== lastReceivedState) {
+                        playSoundForState(newState);
+                        lastReceivedState = newState;
+                    }
+                }
+            };
+
+            ws.onclose = () => {
+                connectionStatus.className = 'conn-badge disconnected';
+                connText.textContent       = 'Offline';
+                updateStateUI('clear');
+                if (currentPlaying) {
+                    currentPlaying.pause();
+                    currentPlaying = null;
+                }
+                setTimeout(connectWebSocket, 3000);
+            };
+        }
+
+        connectWebSocket();
+    </script>
+</body>
+</html>
