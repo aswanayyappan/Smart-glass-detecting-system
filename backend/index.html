@@ -456,18 +456,23 @@
         let lastReceivedState = 'clear';
 
         enableAudioBtn.addEventListener('click', () => {
+            console.log('[Audio] "Enable Sound" clicked. Initializing audio objects...');
             Promise.all(Object.values(audios).map(a => {
                 a.volume = 0;
                 return a.play().then(() => {
                     a.pause();
                     a.currentTime = 0;
                     a.volume = 1;
-                }).catch(() => {});
-            }));
-
-            audioEnabled = true;
-            enableAudioBtn.innerHTML = '✓ &nbsp;Sound Enabled';
-            enableAudioBtn.disabled  = true;
+                    console.log(`[Audio] Primed: ${a.src}`);
+                }).catch(err => {
+                    console.error(`[Audio] Priming failed for ${a.src}:`, err);
+                });
+            })).then(() => {
+                audioEnabled = true;
+                console.log('[Audio] All audio objects ready and sound enabled.');
+                enableAudioBtn.innerHTML = '✓ &nbsp;Sound Enabled';
+                enableAudioBtn.disabled  = true;
+            });
         });
 
         function stopAllAudio() {
@@ -481,27 +486,44 @@
         }
 
         function playSoundForState(state) {
-            if (!audioEnabled) return;
+            console.log(`[Audio] playSoundForState called with: ${state} (AudioEnabled: ${audioEnabled})`);
+            if (!audioEnabled) {
+                console.warn('[Audio] Playback skipped: Audio not enabled. Please click "Enable Sound".');
+                return;
+            }
 
             if (state === 'clear') {
+                console.log('[Audio] State is clear, stopping all audio.');
                 stopAllAudio();
                 return;
             }
 
-            if (lastReceivedState === state && currentPlaying) return;
+            if (lastReceivedState === state && currentPlaying) {
+                console.log(`[Audio] Already playing sound for state: ${state}`);
+                return;
+            }
 
             if (currentPlaying) {
+                console.log('[Audio] Stopping previous audio.');
                 currentPlaying.pause();
                 currentPlaying.currentTime = 0;
                 currentPlaying = null;
             }
 
             const targetAudio = audios[state];
-            if (!targetAudio) return;
+            if (!targetAudio) {
+                console.error(`[Audio] No audio file found for state: ${state}`);
+                return;
+            }
 
+            console.log(`[Audio] Starting playback for state: ${state}`);
             currentPlaying = targetAudio;
             targetAudio.currentTime = 0;
-            targetAudio.play().catch(e => console.error("Playback prevented:", e));
+            targetAudio.play()
+                .then(() => console.log(`[Audio] Playback successfully started for: ${state}`))
+                .catch(e => {
+                    console.error(`[Audio] Playback failed for ${state}:`, e);
+                });
             lastReceivedState = state;
         }
 
@@ -534,27 +556,43 @@
         }
 
         function connectWebSocket() {
-            const wsUrl = `ws://${window.location.hostname}:3000`;
-            const ws    = new WebSocket(wsUrl);
+            // Determine the correct WebSocket protocol (ws: for http:, wss: for https:)
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            // Use window.location.host which includes both hostname and port
+            const wsUrl = `${protocol}//${window.location.host}`;
+            
+            console.log(`[WebSocket] Attempting to connect to: ${wsUrl}`);
+            const ws = new WebSocket(wsUrl);
 
             ws.onopen = () => {
+                console.log('[WebSocket] Connection established successfully');
                 connectionStatus.className = 'conn-badge connected';
                 connText.textContent       = 'Online';
             };
 
             ws.onmessage = (event) => {
-                const data     = JSON.parse(event.data);
-                if (data.event === 'obstacle') {
-                    const newState = data.state;
-                    updateStateUI(newState);
-                    if (newState !== lastReceivedState) {
-                        playSoundForState(newState);
-                        lastReceivedState = newState;
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('[WebSocket] Received data:', data);
+                    if (data.event === 'obstacle') {
+                        const newState = data.state;
+                        updateStateUI(newState);
+                        if (newState !== lastReceivedState) {
+                            console.log(`[WebSocket] State change detected: ${lastReceivedState} -> ${newState}`);
+                            playSoundForState(newState);
+                        }
                     }
+                } catch (e) {
+                    console.error('[WebSocket] Error parsing message:', e);
                 }
             };
 
-            ws.onclose = () => {
+            ws.onerror = (error) => {
+                console.error('[WebSocket] Error occurred:', error);
+            };
+
+            ws.onclose = (event) => {
+                console.warn(`[WebSocket] Connection closed (code: ${event.code}). Reconnecting in 3s...`);
                 connectionStatus.className = 'conn-badge disconnected';
                 connText.textContent       = 'Offline';
                 updateStateUI('clear');
